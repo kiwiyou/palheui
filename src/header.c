@@ -4,6 +4,7 @@
 
 typedef int integer;
 
+#define DEF_CAPACITY (2)
 typedef struct {
     int capacity;
     integer* memory;
@@ -29,51 +30,49 @@ union Storage {
 };
 
 void new_stack(Stack* st) {
-    st->capacity = 256;
-    st->memory = malloc(st->capacity);
+    st->capacity = DEF_CAPACITY;
+    st->memory = malloc(st->capacity * sizeof(integer));
 }
 void push_stack(Stack* st, int current_size, integer v) {
+    st->memory[current_size++] = v;
     if (current_size >= st->capacity) {
 	st->capacity *= 2;
-	integer* new_memory = malloc(st->capacity);
-	memcpy(new_memory, st->memory, current_size);
+	integer* new_memory = malloc(st->capacity * sizeof(integer));
+	memcpy(new_memory, st->memory, current_size * sizeof(integer));
 	free(st->memory);
 	st->memory = new_memory;
     }
-    st->memory[current_size] = v;
 }
 
 void new_queue(Queue* q) {
     q->front = 0;
     q->back = 0;
-    q->capacity = 256;
-    q->memory = malloc(q->capacity);
+    q->capacity = DEF_CAPACITY;
+    q->memory = malloc(q->capacity * sizeof(integer));
 }
-void extend_queue(Queue* q) {
-    int count = q->capacity;
+void extend_queue(Queue* q, int size) {
+    int prev_capacity = q->capacity;
+    integer* new_memory;
     q->capacity *= 2;
-    integer* new_memory = malloc(q->capacity);
-    int front_to_end = count - q->front;
-    memcpy(new_memory, q->memory + q->front, front_to_end);
-    memcpy(new_memory + front_to_end, q->memory + q->back, q->front);
+    new_memory = malloc(q->capacity * sizeof(integer));
+    if (q->front <= q->back) {
+        memcpy(new_memory, q->memory + q->front, (q->back - q->front) * sizeof(integer));
+    } else {
+        memcpy(new_memory, q->memory + q->front, (prev_capacity - q->front) * sizeof(integer));
+        memcpy(new_memory + prev_capacity - q->front, q->memory, q->back * sizeof(integer));
+    }
     free(q->memory);
     q->memory = new_memory;
     q->front = 0;
-    q->back = count;
+    q->back = size;
 }
 void push_queue(Queue* q, integer v) {
     q->memory[q->back++] = v;
     if (q->back == q->capacity) q->back = 0;
-    if (q->back == q->front) {
-	extend_queue(q);
-    }
 }
 void push_queue_front(Queue* q, integer v) {
     if (q->front == 0) q->front = q->capacity;
     q->memory[--q->front] = v;
-    if (q->back == q->front) {
-	extend_queue(q);
-    }
 }
 integer pop_queue(Queue* q) {
     integer v = q->memory[q->front++];
@@ -203,9 +202,9 @@ integer scan_utf8(IO* io) {
 #define STACK_PUSH(v) push_stack(&storage[select].stack, size[select]++, v)
 #define QUEUE_POP0 size[select]--; local0 = pop_queue(&storage[select].queue)
 #define QUEUE_POP1 size[select]--; local1 = pop_queue(&storage[select].queue)
-#define QUEUE_PUSH0 size[select]++; push_queue(&storage[select].queue, local0)
-#define QUEUE_PUSH1 size[select]++; push_queue(&storage[select].queue, local1)
-#define QUEUE_PUSH(v) size[select]++; push_queue(&storage[select].queue, v)
+#define QUEUE_PUSH0 size[select]++; if (size[select] >= storage[select].queue.capacity) extend_queue(&storage[select].queue, size[select] - 1); push_queue(&storage[select].queue, local0)
+#define QUEUE_PUSH1 size[select]++; if (size[select] >= storage[select].queue.capacity) extend_queue(&storage[select].queue, size[select] - 1); push_queue(&storage[select].queue, local1)
+#define QUEUE_PUSH(v) size[select]++; if (size[select] >= storage[select].queue.capacity) extend_queue(&storage[select].queue, size[select] - 1); push_queue(&storage[select].queue, v)
 #define PUSH0_TO(n) tmp = select; select = n; if (select == 21) { QUEUE_PUSH0; } else { STACK_PUSH0; } select = tmp
 #define PUSH_FRONT_0 size[select]++; push_queue_front(&storage[select].queue, local0)
 #define PUSH_FRONT_1 size[select]++; push_queue_front(&storage[select].queue, local1)

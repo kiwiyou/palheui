@@ -4,7 +4,7 @@
 
 typedef int integer;
 
-#define DEF_CAPACITY (2)
+#define DEF_CAPACITY (1 << 16)
 typedef struct {
     int capacity;
     integer* memory;

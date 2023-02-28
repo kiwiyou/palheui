@@ -66,7 +66,8 @@ void extend_queue(Queue* q, int size) {
     q->front = 0;
     q->back = size;
 }
-void push_queue(Queue* q, integer v) {
+void push_queue(Queue* q, integer v, int newsize) {
+    if (newsize == q->capacity) extend_queue(q, newsize - 1);
     q->memory[q->back++] = v;
     if (q->back == q->capacity) q->back = 0;
 }
@@ -202,9 +203,9 @@ integer scan_utf8(IO* io) {
 #define STACK_PUSH(v) push_stack(&storage[select].stack, size[select]++, v)
 #define QUEUE_POP0 size[select]--; local0 = pop_queue(&storage[select].queue)
 #define QUEUE_POP1 size[select]--; local1 = pop_queue(&storage[select].queue)
-#define QUEUE_PUSH0 size[select]++; if (size[select] >= storage[select].queue.capacity) extend_queue(&storage[select].queue, size[select] - 1); push_queue(&storage[select].queue, local0)
-#define QUEUE_PUSH1 size[select]++; if (size[select] >= storage[select].queue.capacity) extend_queue(&storage[select].queue, size[select] - 1); push_queue(&storage[select].queue, local1)
-#define QUEUE_PUSH(v) size[select]++; if (size[select] >= storage[select].queue.capacity) extend_queue(&storage[select].queue, size[select] - 1); push_queue(&storage[select].queue, v)
+#define QUEUE_PUSH0 size[select]++; push_queue(&storage[select].queue, local0, size[select])
+#define QUEUE_PUSH1 size[select]++; push_queue(&storage[select].queue, local1, size[select])
+#define QUEUE_PUSH(v) size[select]++; push_queue(&storage[select].queue, v, size[select])
 #define PUSH0_TO(n) tmp = select; select = n; if (select == 21) { QUEUE_PUSH0; } else { STACK_PUSH0; } select = tmp
 #define PUSH_FRONT_0 size[select]++; push_queue_front(&storage[select].queue, local0)
 #define PUSH_FRONT_1 size[select]++; push_queue_front(&storage[select].queue, local1)

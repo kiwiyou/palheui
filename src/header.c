@@ -98,9 +98,11 @@ void print_decimal(IO* io, integer v) {
     do {
 	temp[--off] = v % 10 + '0';
     } while (v /= 10);
-    int len = 16 - off + sign;
+    if (sign) temp[--off] = '-';
+    int len = 16 - off;
     if (io->off + len > DEF_BUFSIZ) flush(io);
     memcpy(io->buffer + io->off, temp + off, len);
+    io->off += len;
 }
 
 void print_utf8(IO* io, integer codepoint) {
@@ -126,8 +128,8 @@ void print_utf8(IO* io, integer codepoint) {
 }
 
 void new_stdin(IO* io) {
-    io->size = read(0, io->buffer, DEF_BUFSIZ);
-    io->off = 0;
+    io->size = DEF_BUFSIZ;
+    io->off = io->size;
 }
 
 signed char get_or_refill(IO* io) {
@@ -181,7 +183,7 @@ integer scan_utf8(IO* io) {
 }
 
 #define NOP
-#define HALT return local0
+#define HALT flush(&output); return local0
 #define ADD local0 += local1
 #define MULTIPLY local0 *= local1
 #define SUBTRACT local0 -= local1

@@ -297,7 +297,6 @@ enum StorageKind {
 enum Bytecode {
     Nop,
     Halt,
-    // set 0 as 0 + 1
     Add,
     Multiply,
     Subtract,

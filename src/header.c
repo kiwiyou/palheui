@@ -1,8 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 
-typedef int integer;
+typedef int64_t integer;
 
 #define DEF_CAPACITY (1 << 16)
 typedef struct {
@@ -135,8 +136,9 @@ void new_stdin(IO* io) {
 signed char get_or_refill(IO* io) {
     if (!io->size) return -1;
     if (io->off >= io->size) {
-	io->off = 0;
-	io->size = read(0, io->buffer, DEF_BUFSIZ);
+	    io->off = 0;
+	    io->size = read(0, io->buffer, DEF_BUFSIZ);
+        if (!io->size) return -1;
     }
     return io->buffer[io->off++];
 }

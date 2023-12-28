@@ -184,36 +184,6 @@ integer scan_utf8(IO* io) {
     return v;
 }
 
-#define NOP
-#define HALT flush(&output); return local0
-#define ADD local0 += local1
-#define MULTIPLY local0 *= local1
-#define SUBTRACT local0 -= local1
-#define DIVIDE local0 /= local1
-#define REMAINDER local0 %= local1
-#define PRINT_DECIMAL print_decimal(&output, local0)
-#define PRINT_UNICODE print_utf8(&output, local0)
-#define SCAN_DECIMAL local0 = scan_decimal(&input)
-#define SCAN_UNICODE local0 = scan_utf8(&input)
-#define SELECT(n) select = n
-#define COMPARE local0 = (local0 >= local1)
-#define JUMP_NOT_EQUAL_ZERO(label) if (local0 != 0) goto label
-#define STACK_POP0 local0 = storage[select].stack.memory[--size[select]]
-#define STACK_POP1 local1 = storage[select].stack.memory[--size[select]]
-#define STACK_PUSH0 push_stack(&storage[select].stack, size[select]++, local0)
-#define STACK_PUSH1 push_stack(&storage[select].stack, size[select]++, local1)
-#define STACK_PUSH(v) push_stack(&storage[select].stack, size[select]++, v)
-#define QUEUE_POP0 size[select]--; local0 = pop_queue(&storage[select].queue)
-#define QUEUE_POP1 size[select]--; local1 = pop_queue(&storage[select].queue)
-#define QUEUE_PUSH0 size[select]++; push_queue(&storage[select].queue, local0, size[select])
-#define QUEUE_PUSH1 size[select]++; push_queue(&storage[select].queue, local1, size[select])
-#define QUEUE_PUSH(v) size[select]++; push_queue(&storage[select].queue, v, size[select])
-#define PUSH0_TO(n) tmp = select; select = n; if (select == 21) { QUEUE_PUSH0; } else { STACK_PUSH0; } select = tmp
-#define PUSH_FRONT_0 size[select]++; push_queue_front(&storage[select].queue, local0)
-#define PUSH_FRONT_1 size[select]++; push_queue_front(&storage[select].queue, local1)
-#define JUMP_SIZE_NOT_LESS(n, label) if (size[select] >= n) goto label
-#define JUMP(label) goto label
-
 int main() {
     IO input, output;
     new_stdin(&input);

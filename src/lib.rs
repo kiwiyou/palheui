@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 // Integer type used throughout aheui runtime.
 type Integer = i32;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Consonant {
     Halt,
     Add,
@@ -239,48 +239,9 @@ pub fn transpile(code: &str) -> String {
     }
     let code = Linearizer::new(&Field { w, h }, &syllables).linearize();
     let mut output = include_str!("header.c").to_owned();
-    for (i, bytecode) in code.bytecode.into_iter().enumerate() {
-        use std::fmt::Write;
-        if code.reference.contains(&i) {
-            writeln!(output, "LN_{i}:").unwrap();
-        }
-        match bytecode {
-            Bytecode::Nop => output.push_str("    NOP;\n"),
-            Bytecode::Halt => output.push_str("    HALT;\n"),
-            Bytecode::Add => output.push_str("    ADD;\n"),
-            Bytecode::Multiply => output.push_str("    MULTIPLY;\n"),
-            Bytecode::Subtract => output.push_str("    SUBTRACT;\n"),
-            Bytecode::Divide => output.push_str("    DIVIDE;\n"),
-            Bytecode::Remainder => output.push_str("    REMAINDER;\n"),
-            Bytecode::PrintDecimal => output.push_str("    PRINT_DECIMAL;\n"),
-            Bytecode::PrintUnicode => output.push_str("    PRINT_UNICODE;\n"),
-            Bytecode::ScanDecimal => output.push_str("    SCAN_DECIMAL;\n"),
-            Bytecode::ScanUnicode => output.push_str("    SCAN_UNICODE;\n"),
-            Bytecode::Select(n) => writeln!(output, "    SELECT({n});").unwrap(),
-            Bytecode::Compare => output.push_str("    COMPARE;\n"),
-            Bytecode::JumpNotEqualZero(label) => {
-                writeln!(output, "    JUMP_NOT_EQUAL_ZERO(LN_{label});").unwrap()
-            }
-            Bytecode::Pop0(StorageKind::Queue) => output.push_str("    QUEUE_POP0;\n"),
-            Bytecode::Pop1(StorageKind::Queue) => output.push_str("    QUEUE_POP1;\n"),
-            Bytecode::Push0(StorageKind::Queue) => output.push_str("    QUEUE_PUSH0;\n"),
-            Bytecode::Push1(StorageKind::Queue) => output.push_str("    QUEUE_PUSH1;\n"),
-            Bytecode::Push(StorageKind::Queue, v) => {
-                writeln!(output, "    QUEUE_PUSH({v});").unwrap()
-            }
-            Bytecode::Push0To(n) => writeln!(output, "    PUSH0_TO({n});").unwrap(),
-            Bytecode::Pop0(_) => output.push_str("    STACK_POP0;\n"),
-            Bytecode::Pop1(_) => output.push_str("    STACK_POP1;\n"),
-            Bytecode::Push0(_) => output.push_str("    STACK_PUSH0;\n"),
-            Bytecode::Push1(_) => output.push_str("    STACK_PUSH1;\n"),
-            Bytecode::Push(_, v) => writeln!(output, "    STACK_PUSH({v});").unwrap(),
-            Bytecode::PushFront0 => output.push_str("    PUSH_FRONT_0;\n"),
-            Bytecode::PushFront1 => output.push_str("    PUSH_FRONT_1;\n"),
-            Bytecode::JumpSizeNotLess(n, label) => {
-                writeln!(output, "    JUMP_SIZE_NOT_LESS({n}, LN_{label});").unwrap()
-            }
-            Bytecode::Jump(label) => writeln!(output, "    JUMP(LN_{label});").unwrap(),
-        }
+    for line in code.iter() {
+        output.push_str(line);
+        output.push('\n');
     }
     output.push_str(include_str!("footer.c"));
     output
@@ -293,32 +254,14 @@ enum StorageKind {
     Stream,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-enum Bytecode {
-    Nop,
-    Halt,
-    Add,
-    Multiply,
-    Subtract,
-    Divide,
-    Remainder,
-    PrintDecimal,
-    PrintUnicode,
-    ScanDecimal,
-    ScanUnicode,
-    Select(u32),
-    Compare,
-    JumpNotEqualZero(usize),
-    Pop0(StorageKind),
-    Pop1(StorageKind),
-    Push0(StorageKind),
-    Push1(StorageKind),
-    Push0To(u32),
-    Push(StorageKind, Integer),
-    PushFront0,
-    PushFront1,
-    JumpSizeNotLess(usize, usize),
-    Jump(usize),
+impl From<usize> for StorageKind {
+    fn from(value: usize) -> Self {
+        match value {
+            21 => Self::Queue,
+            27 => Self::Stream,
+            _ => Self::Stack,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -327,7 +270,7 @@ struct State {
     c: usize,
     direction: Direction,
     speed: usize,
-    storage: StorageKind,
+    storage: usize,
 }
 
 impl State {
@@ -346,16 +289,11 @@ impl State {
     }
 }
 
-struct LinearCode {
-    reference: HashSet<usize>,
-    bytecode: Vec<Bytecode>,
-}
-
 struct Linearizer<'a> {
     field: &'a Field,
     code: &'a [Syllable],
-    result: LinearCode,
-    state_memo: HashMap<State, usize>,
+    blocks: Vec<String>,
+    state_memo: HashMap<(State, usize), usize>,
 }
 
 impl<'a> Linearizer<'a> {
@@ -364,29 +302,46 @@ impl<'a> Linearizer<'a> {
         Self {
             field,
             code,
-            result: LinearCode {
-                reference: HashSet::new(),
-                bytecode: vec![],
-            },
+            blocks: vec![],
             state_memo: HashMap::new(),
         }
     }
 
-    fn linearize(mut self) -> LinearCode {
-        self.linearize_recursive(State {
-            r: 0,
-            c: 0,
-            direction: Direction::Down,
-            speed: 1,
-            storage: StorageKind::Stack,
-        });
-        self.result
+    fn linearize(mut self) -> Vec<String> {
+        self.linearize_recursive(
+            State {
+                r: 0,
+                c: 0,
+                direction: Direction::Down,
+                speed: 1,
+                storage: 0,
+            },
+            0,
+        );
+        self.blocks
     }
 
-    fn linearize_recursive(&mut self, mut state: State) {
+    fn linearize_recursive(&mut self, mut state: State, presize: usize) -> usize {
+        if let Some(&label) = self.state_memo.get(&(state.clone(), presize)) {
+            return label;
+        }
+        let init_storage = state.storage;
+        let entry = self.blocks.len();
+        self.state_memo.insert((state.clone(), presize), entry);
+        let mut size = [0usize; 28];
+        size[state.storage] = presize;
+        let mut visited = HashSet::new();
+        let mut block = vec![];
         loop {
+            if !visited.insert(state.clone()) {
+                self.optimize_block(entry, init_storage, presize, &block);
+                let i = self.blocks.len();
+                self.blocks.push("".into());
+                let j = self.linearize_recursive(state, 0);
+                self.blocks[i] = format!("    goto B{j};");
+                break;
+            }
             let pos = state.r * self.field.w + state.c;
-            let i = self.result.bytecode.len();
             match self.code[pos].vowel {
                 None => {}
                 Some(Vowel::Up) => {
@@ -444,159 +399,368 @@ impl<'a> Linearizer<'a> {
                     };
                 }
             }
-            use std::collections::hash_map::Entry;
-            match self.state_memo.entry(state.clone()) {
-                Entry::Occupied(occupied) => {
-                    let j = *occupied.get();
-                    self.result.bytecode.push(Bytecode::Jump(j));
-                    self.result.reference.insert(j);
-                    break;
-                }
-                Entry::Vacant(vacant) => {
-                    vacant.insert(i);
-                }
-            }
             match self.code[pos].consonant {
                 None => {}
                 Some(Consonant::Halt) => {
-                    self.result
-                        .bytecode
-                        .push(Bytecode::JumpSizeNotLess(1, i + 2));
-                    self.result.reference.insert(i + 2);
-                    self.result.bytecode.push(Bytecode::Push(state.storage, 0));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Halt);
-                    self.state_memo.insert(state, i);
+                    self.optimize_block(entry, init_storage, presize, &block);
+                    let storage = state.storage;
+                    if StorageKind::from(storage) == StorageKind::Queue {
+                        self.blocks.push(format!("    flush(&output); return size[{storage}] ? pop_queue(&storage[{storage}].queue) : 0;"));
+                    } else {
+                        self.blocks.push(format!("    flush(&output); return size[{storage}] ? storage[{storage}].stack.memory[--size[{storage}]] : 0;"));
+                    }
                     break;
                 }
-                Some(Consonant::Add) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Add);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::Subtract) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Subtract);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::Multiply) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Multiply);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::Divide) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Divide);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::Remainder) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Remainder);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::PrintDecimal) => {
-                    self.require_size(&state, 1);
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::PrintDecimal);
-                }
-                Some(Consonant::PrintUnicode) => {
-                    self.require_size(&state, 1);
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::PrintUnicode);
-                }
-                Some(Consonant::Pop) => {
-                    self.require_size(&state, 1);
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                }
-                Some(Consonant::ScanDecimal) => {
-                    self.result.bytecode.push(Bytecode::ScanDecimal);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::ScanUnicode) => {
-                    self.result.bytecode.push(Bytecode::ScanUnicode);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
-                }
-                Some(Consonant::Push(v)) => {
-                    self.result.bytecode.push(Bytecode::Push(state.storage, v));
-                }
-                Some(Consonant::Duplicate) => {
-                    self.require_size(&state, 1);
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    if state.storage == StorageKind::Queue {
-                        self.result.bytecode.push(Bytecode::PushFront0);
-                        self.result.bytecode.push(Bytecode::PushFront0);
-                    } else {
-                        self.result.bytecode.push(Bytecode::Push0(state.storage));
-                        self.result.bytecode.push(Bytecode::Push0(state.storage));
+                Some(
+                    c @ (Consonant::Add
+                    | Consonant::Subtract
+                    | Consonant::Multiply
+                    | Consonant::Divide
+                    | Consonant::Remainder
+                    | Consonant::Compare),
+                ) => {
+                    if size[state.storage] < 2 {
+                        let storage = state.storage;
+                        self.optimize_block(entry, init_storage, presize, &block);
+                        let i = self.blocks.len();
+                        self.blocks.push("".into());
+                        let reverse_state = state.reverse_next(self.field);
+                        let j = self.linearize_recursive(reverse_state, 0);
+                        let k = self.linearize_recursive(state, 2);
+                        self.blocks[i] =
+                            format!("    if (size[{storage}] < 2) goto B{j}; else goto B{k};");
+                        break;
                     }
+                    block.push(c);
+                    size[state.storage] = size[state.storage].saturating_sub(1);
                 }
-                Some(Consonant::Exchange) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    if state.storage == StorageKind::Queue {
-                        self.result.bytecode.push(Bytecode::PushFront1);
-                        self.result.bytecode.push(Bytecode::PushFront0);
-                    } else {
-                        self.result.bytecode.push(Bytecode::Push1(state.storage));
-                        self.result.bytecode.push(Bytecode::Push0(state.storage));
+                Some(c @ (Consonant::PrintDecimal | Consonant::PrintUnicode | Consonant::Pop)) => {
+                    if size[state.storage] < 1 {
+                        let storage = state.storage;
+                        self.optimize_block(entry, init_storage, presize, &block);
+                        let i = self.blocks.len();
+                        self.blocks.push("".into());
+                        let reverse_state = state.reverse_next(self.field);
+                        let j = self.linearize_recursive(reverse_state, 0);
+                        let k = self.linearize_recursive(state, 1);
+                        self.blocks[i] =
+                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        break;
                     }
+                    block.push(c);
+                    size[state.storage] = size[state.storage].saturating_sub(1);
                 }
-                Some(Consonant::Select(storage)) => {
-                    self.result.bytecode.push(Bytecode::Select(storage));
-                    state.storage = match storage {
-                        // ㅇ
-                        21 => StorageKind::Queue,
-                        // ㅎ
-                        27 => StorageKind::Stream,
-                        _ => StorageKind::Stack,
-                    };
+                Some(
+                    c @ (Consonant::ScanDecimal | Consonant::ScanUnicode | Consonant::Push(..)),
+                ) => {
+                    block.push(c);
+                    size[state.storage] += 1;
                 }
-                Some(Consonant::Move(storage)) => {
-                    self.require_size(&state, 1);
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Push0To(storage));
+                Some(c @ Consonant::Duplicate) => {
+                    if size[state.storage] < 1 {
+                        let storage = state.storage;
+                        self.optimize_block(entry, init_storage, presize, &block);
+                        let i = self.blocks.len();
+                        self.blocks.push("".into());
+                        let reverse_state = state.reverse_next(self.field);
+                        let j = self.linearize_recursive(reverse_state, 0);
+                        let k = self.linearize_recursive(state, 1);
+                        self.blocks[i] =
+                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        break;
+                    }
+                    block.push(c);
+                    size[state.storage] += 1;
                 }
-                Some(Consonant::Compare) => {
-                    self.require_size(&state, 2);
-                    self.result.bytecode.push(Bytecode::Pop1(state.storage));
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
-                    self.result.bytecode.push(Bytecode::Compare);
-                    self.result.bytecode.push(Bytecode::Push0(state.storage));
+                Some(c @ Consonant::Exchange) => {
+                    if size[state.storage] < 2 {
+                        let storage = state.storage;
+                        self.optimize_block(entry, init_storage, presize, &block);
+                        let i = self.blocks.len();
+                        self.blocks.push("".into());
+                        let reverse_state = state.reverse_next(self.field);
+                        let j = self.linearize_recursive(reverse_state, 0);
+                        let k = self.linearize_recursive(state, 2);
+                        self.blocks[i] =
+                            format!("    if (size[{storage}] < 2) goto B{j}; else goto B{k};");
+                        break;
+                    }
+                    block.push(c);
+                }
+                Some(c @ Consonant::Select(s)) => {
+                    block.push(c);
+                    state.storage = s as usize;
+                }
+                Some(c @ Consonant::Move(s)) => {
+                    if size[state.storage] < 1 {
+                        let storage = state.storage;
+                        self.optimize_block(entry, init_storage, presize, &block);
+                        let i = self.blocks.len();
+                        self.blocks.push("".into());
+                        let reverse_state = state.reverse_next(self.field);
+                        let j = self.linearize_recursive(reverse_state, 0);
+                        let k = self.linearize_recursive(state, 1);
+                        self.blocks[i] =
+                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        break;
+                    }
+                    block.push(c);
+                    size[state.storage] = size[state.storage].saturating_sub(1);
+                    size[s as usize] += 1;
                 }
                 Some(Consonant::Branch) => {
-                    self.require_size(&state, 1);
-                    self.result.bytecode.push(Bytecode::Pop0(state.storage));
+                    if size[state.storage] < 1 {
+                        let storage = state.storage;
+                        self.optimize_block(entry, init_storage, presize, &block);
+                        let i = self.blocks.len();
+                        self.blocks.push("".into());
+                        let reverse_state = state.reverse_next(self.field);
+                        let j = self.linearize_recursive(reverse_state, 0);
+                        let k = self.linearize_recursive(state, 1);
+                        self.blocks[i] =
+                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        break;
+                    }
+                    self.optimize_block(entry, init_storage, presize, &block);
+                    let i = self.blocks.len();
+                    let storage = state.storage;
+                    self.blocks.push("".into());
                     let reverse_state = state.reverse_next(self.field);
-                    let i = self.result.bytecode.len();
-                    self.result.bytecode.push(Bytecode::Nop);
-                    self.linearize_recursive(reverse_state);
-                    let j = self.result.bytecode.len();
-                    self.result.bytecode[i] = Bytecode::JumpNotEqualZero(j);
-                    self.result.reference.insert(j);
+                    let j = self.linearize_recursive(reverse_state, 0);
+                    (state.r, state.c) = self.field.next_pos(&state);
+                    let k = self.linearize_recursive(state, 0);
+                    if StorageKind::from(storage) == StorageKind::Queue {
+                        self.blocks[i] =  format!("    if ((size[{storage}]--, pop_queue(&storage[{storage}].queue))) goto B{k}; else goto B{j};");
+                    } else {
+                        self.blocks[i] =  format!("    if (storage[{storage}].stack.memory[--size[{storage}]]) goto B{k}; else goto B{j};");
+                    }
+                    break;
                 }
             }
             (state.r, state.c) = self.field.next_pos(&state);
         }
+        entry
     }
 
-    fn require_size(&mut self, state: &State, size: usize) {
-        let i = self.result.bytecode.len();
-        self.result.bytecode.push(Bytecode::Nop);
-        let reverse_state = state.reverse_next(self.field);
-        self.linearize_recursive(reverse_state);
-        let j = self.result.bytecode.len();
-        self.result.bytecode[i] = Bytecode::JumpSizeNotLess(size, j);
-        self.result.reference.insert(j);
+    fn optimize_block(
+        &mut self,
+        label: usize,
+        init_storage: usize,
+        presize: usize,
+        block: &[Consonant],
+    ) {
+        use std::fmt::Write;
+        let mut output = String::new();
+        let mut id = 0;
+        let mut var = vec![VecDeque::new(); 28];
+        let mut storage = init_storage;
+        for _ in 0..presize {
+            if StorageKind::from(storage) == StorageKind::Queue {
+                writeln!(
+                    output,
+                    "    size[{storage}]--; integer v{id} = pop_queue(&storage[{storage}].queue);"
+                )
+                .ok();
+                var[storage].push_back(id);
+            } else {
+                writeln!(
+                    output,
+                    "    integer v{id} = storage[{storage}].stack.memory[--size[{storage}]];",
+                )
+                .ok();
+                var[storage].push_front(id);
+            }
+            id += 1;
+        }
+        for code in block {
+            match code {
+                Consonant::Halt | Consonant::Branch => {}
+                Consonant::Add => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    let b = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    integer v{id} = v{b} + v{a};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Multiply => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    let b = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    integer v{id} = v{b} * v{a};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Subtract => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    let b = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    integer v{id} = v{b} - v{a};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Divide => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    let b = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    integer v{id} = v{b} / v{a};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Remainder => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    let b = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    integer v{id} = v{b} % v{a};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::PrintDecimal => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    print_decimal(&output, v{a});").ok();
+                }
+                Consonant::PrintUnicode => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    print_utf8(&output, v{a});").ok();
+                }
+                Consonant::ScanDecimal => {
+                    writeln!(output, "    integer v{id} = scan_decimal(&input);").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::ScanUnicode => {
+                    writeln!(output, "    integer v{id} = scan_utf8(&input);").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Select(s) => storage = *s as usize,
+                Consonant::Compare => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    let b = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    writeln!(output, "    integer v{id} = v{b} >= v{a};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Exchange => {
+                    if StorageKind::from(storage) == StorageKind::Queue {
+                        let a = var[storage].pop_front().unwrap();
+                        let b = var[storage].pop_front().unwrap();
+                        var[storage].push_front(a);
+                        var[storage].push_front(b);
+                    } else {
+                        let a = var[storage].pop_back().unwrap();
+                        let b = var[storage].pop_back().unwrap();
+                        var[storage].push_back(a);
+                        var[storage].push_back(b);
+                    }
+                }
+                Consonant::Duplicate => {
+                    if StorageKind::from(storage) == StorageKind::Queue {
+                        let a = var[storage].pop_front().unwrap();
+                        var[storage].push_front(a);
+                        var[storage].push_front(a);
+                    } else {
+                        let a = var[storage].pop_back().unwrap();
+                        var[storage].push_back(a);
+                        var[storage].push_back(a);
+                    };
+                }
+                Consonant::Pop => {
+                    if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                }
+                Consonant::Push(v) => {
+                    writeln!(output, "    integer v{id} = {v};").ok();
+                    var[storage].push_back(id);
+                    id += 1;
+                }
+                Consonant::Move(s) => {
+                    let a = if StorageKind::from(storage) == StorageKind::Queue {
+                        var[storage].pop_front().unwrap()
+                    } else {
+                        var[storage].pop_back().unwrap()
+                    };
+                    var[*s as usize].push_back(a);
+                }
+            }
+        }
+        for (i, storage) in var.into_iter().enumerate() {
+            if StorageKind::from(i) == StorageKind::Queue {
+                for id in storage {
+                    writeln!(
+                        output,
+                        "    size[{i}]++; push_queue(&storage[{i}].queue, v{id}, size[{i}]);"
+                    )
+                    .ok();
+                }
+            } else {
+                for id in storage {
+                    writeln!(
+                        output,
+                        "    push_stack(&storage[{i}].stack, size[{i}]++, v{id});"
+                    )
+                    .ok();
+                }
+            }
+        }
+        if output.is_empty() {
+            self.blocks.push(format!("B{label}:"));
+        } else {
+            self.blocks.push(format!("B{label}:{{\n{output}}}"));
+        }
     }
 }

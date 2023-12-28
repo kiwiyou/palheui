@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 // Integer type used throughout aheui runtime.
-type Integer = i32;
+type Integer = i64;
 
 #[derive(Clone, Copy, Debug)]
 enum Consonant {
@@ -341,6 +341,7 @@ impl<'a> Linearizer<'a> {
                 self.blocks[i] = format!("    goto B{j};");
                 break;
             }
+            let prev = state.clone();
             let pos = state.r * self.field.w + state.c;
             match self.code[pos].vowel {
                 None => {}
@@ -426,7 +427,7 @@ impl<'a> Linearizer<'a> {
                         self.blocks.push("".into());
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
-                        let k = self.linearize_recursive(state, 2);
+                        let k = self.linearize_recursive(prev, 2);
                         self.blocks[i] =
                             format!("    if (size[{storage}] < 2) goto B{j}; else goto B{k};");
                         break;
@@ -442,7 +443,7 @@ impl<'a> Linearizer<'a> {
                         self.blocks.push("".into());
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
-                        let k = self.linearize_recursive(state, 1);
+                        let k = self.linearize_recursive(prev, 1);
                         self.blocks[i] =
                             format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
                         break;
@@ -464,7 +465,7 @@ impl<'a> Linearizer<'a> {
                         self.blocks.push("".into());
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
-                        let k = self.linearize_recursive(state, 1);
+                        let k = self.linearize_recursive(prev, 1);
                         self.blocks[i] =
                             format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
                         break;
@@ -480,7 +481,7 @@ impl<'a> Linearizer<'a> {
                         self.blocks.push("".into());
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
-                        let k = self.linearize_recursive(state, 2);
+                        let k = self.linearize_recursive(prev, 2);
                         self.blocks[i] =
                             format!("    if (size[{storage}] < 2) goto B{j}; else goto B{k};");
                         break;
@@ -499,7 +500,7 @@ impl<'a> Linearizer<'a> {
                         self.blocks.push("".into());
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
-                        let k = self.linearize_recursive(state, 1);
+                        let k = self.linearize_recursive(prev, 1);
                         self.blocks[i] =
                             format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
                         break;
@@ -516,7 +517,7 @@ impl<'a> Linearizer<'a> {
                         self.blocks.push("".into());
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
-                        let k = self.linearize_recursive(state, 1);
+                        let k = self.linearize_recursive(prev, 1);
                         self.blocks[i] =
                             format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
                         break;

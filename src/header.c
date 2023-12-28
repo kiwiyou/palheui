@@ -92,15 +92,16 @@ void flush(IO* io) {
 }
 
 void print_decimal(IO* io, integer v) {
-    char temp[16];
-    int off = 16;
+    uint64_t w = v;
+    char temp[24];
+    int off = 24;
     int sign = v < 0;
-    if (sign) v = -v;
+    if (sign) w = -w;
     do {
-	temp[--off] = v % 10 + '0';
-    } while (v /= 10);
+	temp[--off] = w % 10 + '0';
+    } while (w /= 10);
     if (sign) temp[--off] = '-';
-    int len = 16 - off;
+    int len = 24 - off;
     if (io->off + len > DEF_BUFSIZ) flush(io);
     memcpy(io->buffer + io->off, temp + off, len);
     io->off += len;
@@ -144,7 +145,7 @@ signed char get_or_refill(IO* io) {
 }
 
 integer scan_decimal(IO* io) {
-    integer v = 0;
+    uint64_t v = 0;
     signed char c = get_or_refill(io);
     if (c == -1) return -1;
     int sign = c == '-';

@@ -739,7 +739,11 @@ impl<'a> Linearizer<'a> {
                         output.push_str(&effect);
                         effect = effect_init.into();
                     }
-                    write!(def, "v{id}=v{b}>=v{a},").ok();
+                    if a == b {
+                        write!(def, "v{id}=1,").ok();
+                    } else {
+                        write!(def, "v{id}=v{b}>=v{a},").ok();
+                    }
                     var[storage].push_back(id);
                     id += 1;
                 }

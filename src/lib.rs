@@ -100,7 +100,7 @@ impl Field {
 pub fn transpile(code: &str) -> String {
     let (w, h) = code
         .lines()
-        .fold((0, 0), |(w, h), line| (w + line.chars().count(), h + 1));
+        .fold((0, 0), |(w, h), line| (w.max(line.chars().count()), h + 1));
     let mut syllables = vec![Syllable::default(); w * h];
     for (line, row) in code.lines().zip(syllables.chunks_mut(w)) {
         for (c, cell) in line.chars().zip(row) {

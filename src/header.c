@@ -108,24 +108,25 @@ void print_decimal(IO* io, integer v) {
 }
 
 void print_utf8(IO* io, integer codepoint) {
+    if (codepoint < 0 || codepoint > 0x10ffff) return;
     if (codepoint < 0x80) {
-	if (io->off + 1 > DEF_BUFSIZ) flush(io);
-	io->buffer[io->off++] = codepoint;
+        if (io->off + 1 > DEF_BUFSIZ) flush(io);
+            io->buffer[io->off++] = codepoint;
     } else if (codepoint < 0x800) {
-	if (io->off + 2 > DEF_BUFSIZ) flush(io);
-	io->buffer[io->off++] = 0xC0 | (codepoint >> 6);
-	io->buffer[io->off++] = 0x80 | (codepoint & 0x3F);
+        if (io->off + 2 > DEF_BUFSIZ) flush(io);
+        io->buffer[io->off++] = 0xC0 | (codepoint >> 6);
+        io->buffer[io->off++] = 0x80 | (codepoint & 0x3F);
     } else if (codepoint < 0x10000) {
-	if (io->off + 3 > DEF_BUFSIZ) flush(io);
-	io->buffer[io->off++] = 0xE0 | (codepoint >> 12);
-	io->buffer[io->off++] = 0x80 | ((codepoint >> 6) & 0x3F);
-	io->buffer[io->off++] = 0x80 | (codepoint & 0x3F);
+        if (io->off + 3 > DEF_BUFSIZ) flush(io);
+        io->buffer[io->off++] = 0xE0 | (codepoint >> 12);
+        io->buffer[io->off++] = 0x80 | ((codepoint >> 6) & 0x3F);
+        io->buffer[io->off++] = 0x80 | (codepoint & 0x3F);
     } else {
-	if (io->off + 4 > DEF_BUFSIZ) flush(io);
-	io->buffer[io->off++] = 0xF0 | (codepoint >> 18);
-	io->buffer[io->off++] = 0x80 | ((codepoint >> 12) & 0x3F);
-	io->buffer[io->off++] = 0x80 | ((codepoint >> 6) & 0x3F);
-	io->buffer[io->off++] = 0x80 | (codepoint & 0x3F);
+        if (io->off + 4 > DEF_BUFSIZ) flush(io);
+        io->buffer[io->off++] = 0xF0 | (codepoint >> 18);
+        io->buffer[io->off++] = 0x80 | ((codepoint >> 12) & 0x3F);
+        io->buffer[io->off++] = 0x80 | ((codepoint >> 6) & 0x3F);
+        io->buffer[io->off++] = 0x80 | (codepoint & 0x3F);
     }
 }
 
@@ -134,53 +135,73 @@ void new_stdin(IO* io) {
     io->off = io->size;
 }
 
-signed char get_or_refill(IO* io) {
+signed char peek_or_refill(IO* io) {
     if (!io->size) return -1;
     if (io->off >= io->size) {
 	    io->off = 0;
 	    io->size = read(0, io->buffer, DEF_BUFSIZ);
         if (!io->size) return -1;
     }
-    return io->buffer[io->off++];
+    return io->buffer[io->off];
+}
+
+void consume(IO* io) {
+    io->off++;
 }
 
 integer scan_decimal(IO* io) {
     uint64_t v = 0;
-    signed char c = get_or_refill(io);
-    if (c == -1) return -1;
+    signed char c;
+    while (1) {
+        c = peek_or_refill(io);
+        if (c == -1) return -1;
+        if (c > ' ') break;
+        consume(io);
+    }
     int sign = c == '-';
-    if (sign) c = get_or_refill(io);
+    if (sign) {
+        consume(io);
+        c = peek_or_refill(io);
+    }
     while ('0' <= c && c <= '9') {
         v = v * 10 + c - '0';
-        c = get_or_refill(io);
+        consume(io);
+        c = peek_or_refill(io);
     }
     if (sign) v = -v;
     return v;
 }
 
 integer scan_utf8(IO* io) {
-    signed char c = get_or_refill(io);
+    signed char c = peek_or_refill(io);
+    consume(io);
     if (c == -1) return -1;
     integer v = (unsigned char) c;
     if (!(v & 0x80)) return v;
     else if (!(v & 0x20)) {
-	v &= 0x1F;
-	v <<= 6;
-	v |= get_or_refill(io) & 0x3F;
+        v &= 0x1F;
+        v <<= 6;
+        v |= peek_or_refill(io) & 0x3F;
+        consume(io);
     } else if (!(v & 0x10)) {
-	v &= 0x0F;
-	v <<= 6;
-	v |= get_or_refill(io) & 0x3F;
-	v <<= 6;
-	v |= get_or_refill(io) & 0x3F;
+        v &= 0x0F;
+        v <<= 6;
+        v |= peek_or_refill(io) & 0x3F;
+        consume(io);
+        v <<= 6;
+        v |= peek_or_refill(io) & 0x3F;
+        consume(io);
     } else {
-	v &= 0x07;
-	v <<= 6;
-	v |= get_or_refill(io) & 0x3F;
-	v <<= 6;
-	v |= get_or_refill(io) & 0x3F;
-	v <<= 6;
-	v |= get_or_refill(io) & 0x3F;
+        v &= 0x07;
+        v <<= 6;
+        v |= peek_or_refill(io) & 0x3F;
+        consume(io);
+        v <<= 6;
+        v |= peek_or_refill(io) & 0x3F;
+        consume(io);
+        v <<= 6;
+        v |= peek_or_refill(io) & 0x3F;
+        consume(io);
     }
     return v;
 }
@@ -205,7 +226,7 @@ int main() {
     new_stdout(&output);
     union Storage storage[28];
     for (int i = 0; i < 28; ++i) {
-	if (i == 21) new_queue(&storage[i].queue);
-	else new_stack(&storage[i].stack);
+        if (i == 21) new_queue(&storage[i].queue);
+        else new_stack(&storage[i].stack);
     }
     int size[28] = {};

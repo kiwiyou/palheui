@@ -406,9 +406,9 @@ impl<'a> Linearizer<'a> {
                     self.optimize_block(entry, init_storage, presize, &block);
                     let storage = state.storage;
                     if StorageKind::from(storage) == StorageKind::Queue {
-                        self.blocks.push(format!("    flush(&output); return size[{storage}] ? pop_queue(&storage[{storage}].queue) : 0;"));
+                        self.blocks.push(format!("    HALTQ({storage});"));
                     } else {
-                        self.blocks.push(format!("    flush(&output); return size[{storage}] ? storage[{storage}].stack.memory[--size[{storage}]] : 0;"));
+                        self.blocks.push(format!("    HALTS({storage});"));
                     }
                     break;
                 }
@@ -428,8 +428,7 @@ impl<'a> Linearizer<'a> {
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
                         let k = self.linearize_recursive(prev, 2);
-                        self.blocks[i] =
-                            format!("    if (size[{storage}] < 2) goto B{j}; else goto B{k};");
+                        self.blocks[i] = format!("    JSL({storage}, 2, {j}, {k});");
                         break;
                     }
                     block.push(c);
@@ -444,8 +443,7 @@ impl<'a> Linearizer<'a> {
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
                         let k = self.linearize_recursive(prev, 1);
-                        self.blocks[i] =
-                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        self.blocks[i] = format!("    JSL({storage}, 1, {j}, {k});");
                         break;
                     }
                     block.push(c);
@@ -466,8 +464,7 @@ impl<'a> Linearizer<'a> {
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
                         let k = self.linearize_recursive(prev, 1);
-                        self.blocks[i] =
-                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        self.blocks[i] = format!("    JSL({storage}, 1, {j}, {k});");
                         break;
                     }
                     block.push(c);
@@ -482,8 +479,7 @@ impl<'a> Linearizer<'a> {
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
                         let k = self.linearize_recursive(prev, 2);
-                        self.blocks[i] =
-                            format!("    if (size[{storage}] < 2) goto B{j}; else goto B{k};");
+                        self.blocks[i] = format!("    JSL({storage}, 2, {j}, {k});");
                         break;
                     }
                     block.push(c);
@@ -501,8 +497,7 @@ impl<'a> Linearizer<'a> {
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
                         let k = self.linearize_recursive(prev, 1);
-                        self.blocks[i] =
-                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        self.blocks[i] = format!("    JSL({storage}, 1, {j}, {k});");
                         break;
                     }
                     block.push(c);
@@ -518,8 +513,7 @@ impl<'a> Linearizer<'a> {
                         let reverse_state = state.reverse_next(self.field);
                         let j = self.linearize_recursive(reverse_state, 0);
                         let k = self.linearize_recursive(prev, 1);
-                        self.blocks[i] =
-                            format!("    if (size[{storage}] < 1) goto B{j}; else goto B{k};");
+                        self.blocks[i] = format!("    JSL({storage}, 1, {j}, {k});");
                         break;
                     }
                     self.optimize_block(entry, init_storage, presize, &block);
@@ -531,9 +525,9 @@ impl<'a> Linearizer<'a> {
                     (state.r, state.c) = self.field.next_pos(&state);
                     let k = self.linearize_recursive(state, 0);
                     if StorageKind::from(storage) == StorageKind::Queue {
-                        self.blocks[i] =  format!("    if ((size[{storage}]--, pop_queue(&storage[{storage}].queue))) goto B{k}; else goto B{j};");
+                        self.blocks[i] = format!("    JNZQ({storage}, {k}, {j})");
                     } else {
-                        self.blocks[i] =  format!("    if (storage[{storage}].stack.memory[--size[{storage}]]) goto B{k}; else goto B{j};");
+                        self.blocks[i] = format!("    JNZS({storage}, {k}, {j})");
                     }
                     break;
                 }
@@ -555,24 +549,20 @@ impl<'a> Linearizer<'a> {
         let mut id = 0;
         let mut var = vec![VecDeque::new(); 28];
         let mut storage = init_storage;
+        let def_init = "    integer ";
+        let mut def = String::from(def_init);
         for _ in 0..presize {
             if StorageKind::from(storage) == StorageKind::Queue {
-                writeln!(
-                    output,
-                    "    size[{storage}]--; integer v{id} = pop_queue(&storage[{storage}].queue);"
-                )
-                .ok();
+                write!(def, "v{id}=POPQ({storage}),").ok();
                 var[storage].push_back(id);
             } else {
-                writeln!(
-                    output,
-                    "    integer v{id} = storage[{storage}].stack.memory[--size[{storage}]];",
-                )
-                .ok();
+                write!(def, "v{id}=POPS({storage}),",).ok();
                 var[storage].push_front(id);
             }
             id += 1;
         }
+        let effect_init = "    ";
+        let mut effect = String::from(effect_init);
         for code in block {
             match code {
                 Consonant::Halt | Consonant::Branch => {}
@@ -587,7 +577,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    integer v{id} = v{b} + v{a};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=v{b}+v{a},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -602,7 +598,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    integer v{id} = v{b} * v{a};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=v{b}*v{a},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -617,7 +619,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    integer v{id} = v{b} - v{a};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=v{b}-v{a},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -632,7 +640,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    integer v{id} = v{b} / v{a};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=v{b}/v{a},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -647,7 +661,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    integer v{id} = v{b} % v{a};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=v{b}%v{a},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -657,7 +677,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    print_decimal(&output, v{a});").ok();
+                    if def.len() > def_init.len() {
+                        def.pop();
+                        def.push_str(";\n");
+                        output.push_str(&def);
+                        def = def_init.into();
+                    }
+                    write!(effect, "PRINTD({a}),").ok();
                 }
                 Consonant::PrintUnicode => {
                     let a = if StorageKind::from(storage) == StorageKind::Queue {
@@ -665,15 +691,33 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    print_utf8(&output, v{a});").ok();
+                    if def.len() > def_init.len() {
+                        def.pop();
+                        def.push_str(";\n");
+                        output.push_str(&def);
+                        def = def_init.into();
+                    }
+                    write!(effect, "PRINTU({a}),").ok();
                 }
                 Consonant::ScanDecimal => {
-                    writeln!(output, "    integer v{id} = scan_decimal(&input);").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=SCAND,").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
                 Consonant::ScanUnicode => {
-                    writeln!(output, "    integer v{id} = scan_utf8(&input);").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=SCANU,").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -689,7 +733,13 @@ impl<'a> Linearizer<'a> {
                     } else {
                         var[storage].pop_back().unwrap()
                     };
-                    writeln!(output, "    integer v{id} = v{b} >= v{a};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}=v{b}>=v{a},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -725,7 +775,13 @@ impl<'a> Linearizer<'a> {
                     };
                 }
                 Consonant::Push(v) => {
-                    writeln!(output, "    integer v{id} = {v};").ok();
+                    if effect.len() > effect_init.len() {
+                        effect.pop();
+                        effect.push_str(";\n");
+                        output.push_str(&effect);
+                        effect = effect_init.into();
+                    }
+                    write!(def, "v{id}={v},").ok();
                     var[storage].push_back(id);
                     id += 1;
                 }
@@ -739,24 +795,26 @@ impl<'a> Linearizer<'a> {
                 }
             }
         }
+        if def.len() > def_init.len() {
+            def.pop();
+            def.push_str(";\n");
+            output.push_str(&def);
+        }
         for (i, storage) in var.into_iter().enumerate() {
             if StorageKind::from(i) == StorageKind::Queue {
                 for id in storage {
-                    writeln!(
-                        output,
-                        "    size[{i}]++; push_queue(&storage[{i}].queue, v{id}, size[{i}]);"
-                    )
-                    .ok();
+                    write!(effect, "PUSHQ({i},{id}),").ok();
                 }
             } else {
                 for id in storage {
-                    writeln!(
-                        output,
-                        "    push_stack(&storage[{i}].stack, size[{i}]++, v{id});"
-                    )
-                    .ok();
+                    write!(effect, "PUSHS({i},{id}),").ok();
                 }
             }
+        }
+        if effect.len() > effect_init.len() {
+            effect.pop();
+            effect.push_str(";\n");
+            output.push_str(&effect);
         }
         if output.is_empty() {
             self.blocks.push(format!("B{label}:"));

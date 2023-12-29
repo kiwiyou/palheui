@@ -185,6 +185,20 @@ integer scan_utf8(IO* io) {
     return v;
 }
 
+#define PUSHS(i, j) push_stack(&storage[i].stack, size[i]++, v ## j)
+#define POPS(i) storage[i].stack.memory[--size[i]]
+#define PUSHQ(i, j) push_queue(&storage[i].queue, v ## j, ++size[i])
+#define POPQ(i) (size[i]--, pop_queue(&storage[i].queue))
+#define PRINTD(i) print_decimal(&output, v ## i)
+#define PRINTU(i) print_utf8(&output, v ## i)
+#define SCAND scan_decimal(&input)
+#define SCANU scan_utf8(&input)
+#define HALTS(i) return (flush(&output), size[i] ? storage[i].stack.memory[--size[i]] : 0)
+#define HALTQ(i) return (flush(&output), size[i] ? pop_queue(&storage[i].queue) : 0)
+#define JSL(i, n, j, k) if (size[i] < n) goto B ## j; else goto B ## k;
+#define JNZQ(i, j, k) if (POPQ(i)) goto B ## j; else goto B ## k;
+#define JNZS(i, j, k) if (POPS(i)) goto B ## j; else goto B ## k;
+
 int main() {
     IO input, output;
     new_stdin(&input);

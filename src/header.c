@@ -209,5 +209,3 @@ int main() {
 	else new_stack(&storage[i].stack);
     }
     int size[28] = {};
-    integer local0, local1;
-    int select = 0, tmp;
